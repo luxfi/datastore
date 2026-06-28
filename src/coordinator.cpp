@@ -46,16 +46,21 @@ consensus2::VoteResult Coordinator::record_vote(const consensus2::BlockId& block
 }
 
 std::size_t Coordinator::try_commit() {
-    // 1) Promote any block that has reached BOTH liveness (wave Accept) and safety
-    //    (a >2/3-stake quorum cert) into the ready queue, keyed by its log index.
-    for (auto& [block_id, p] : proposed_) {
-        if (p.ready) continue;
-        if (wave_.decision(block_id) != consensus2::Decision::Accept) continue;
-        if (!gate_.is_final(block_id)) continue;
+    // 1) Promote finalized blocks (wave Accept AND a >2/3-stake quorum cert), then
+    //    ERASE them from proposed_ and drop their votes from the gate — scan walks
+    //    in-flight blocks only (no O(N²) re-walk) and memory stays bounded (no
+    //    retained vote sets). [coordination benchmark fix]
+    for (auto it = proposed_.begin(); it != proposed_.end();) {
+        const auto& block_id = it->first;
+        if (wave_.decision(block_id) != consensus2::Decision::Accept || !gate_.is_final(block_id)) {
+            ++it;
+            continue;
+        }
         auto cert = gate_.assemble_cert(block_id);
-        if (!cert) continue;                         // structurally impossible once final
-        ready_.emplace(p.idx, std::make_pair(p.entry, *cert));
-        p.ready = true;
+        if (!cert) { ++it; continue; }               // structurally impossible once final
+        ready_.emplace(it->second.idx, std::make_pair(it->second.entry, *cert));
+        gate_.drop(block_id);                          // release the gate's votes
+        it = proposed_.erase(it);                      // shrink the working set
     }
 
     // 2) Commit a contiguous prefix to the ManifestLog, in strict index order.
