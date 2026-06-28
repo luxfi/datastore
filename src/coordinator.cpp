@@ -5,15 +5,6 @@
 
 namespace lux::datastore {
 
-namespace {
-// Reduce a 32-byte block id to a wave item handle (first 8 bytes, big-endian).
-std::uint64_t item_of(const consensus2::BlockId& b) {
-    std::uint64_t h = 0;
-    for (int i = 0; i < 8; ++i) h = (h << 8) | b[i];
-    return h;
-}
-}  // namespace
-
 Coordinator::Coordinator(std::vector<consensus2::Validator> validators,
                          std::uint32_t alpha,
                          consensus2::WaveConfig wave_cfg,
@@ -37,7 +28,7 @@ consensus2::VotePosition Coordinator::propose(ManifestEntry entry) {
     pos.epoch = epoch_;
 
     gate_.submit(pos);
-    proposed_[pos.block_id] = Proposed{std::move(entry), idx, item_of(pos.block_id), false};
+    proposed_[pos.block_id] = Proposed{std::move(entry), idx, false};
     return pos;
 }
 
@@ -45,7 +36,7 @@ consensus2::Decision Coordinator::record_poll(const consensus2::BlockId& block_i
                                               std::uint32_t yes, std::uint32_t total) {
     const auto it = proposed_.find(block_id);
     if (it == proposed_.end()) return consensus2::Decision::Undecided;
-    return wave_.record_round(it->second.item, yes, total);
+    return wave_.record_round(block_id, yes, total);  // wave keys on the full block id (M4)
 }
 
 consensus2::VoteResult Coordinator::record_vote(const consensus2::BlockId& block_id,
@@ -59,7 +50,7 @@ std::size_t Coordinator::try_commit() {
     //    (a >2/3-stake quorum cert) into the ready queue, keyed by its log index.
     for (auto& [block_id, p] : proposed_) {
         if (p.ready) continue;
-        if (wave_.decision(p.item) != consensus2::Decision::Accept) continue;
+        if (wave_.decision(block_id) != consensus2::Decision::Accept) continue;
         if (!gate_.is_final(block_id)) continue;
         auto cert = gate_.assemble_cert(block_id);
         if (!cert) continue;                         // structurally impossible once final

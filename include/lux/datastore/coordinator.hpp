@@ -65,7 +65,6 @@ private:
     struct Proposed {
         ManifestEntry entry;
         std::uint64_t idx = 0;
-        std::uint64_t item = 0;  // wave handle (first 8 bytes of block_id)
         bool ready = false;      // finality reached, queued for in-order commit
     };
     std::map<consensus2::BlockId, Proposed> proposed_;
