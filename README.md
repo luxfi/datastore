@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/hero.svg" alt="datastore" width="880"></p>
+
 # luxfi/datastore
 
 The Lux-native blockchain datastore — a ReplicatedMergeTree-style analytics store
